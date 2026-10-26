@@ -1,0 +1,361 @@
+<!doctype html>
+<!-- THE GYM BOARD, TV PAGE (owner yes 19 Oct 2026 to concept round 3, PR #597; built in
+     store/rounds/2026-10-19-gym-board-build/tv-page). Published to micdevlins-lab/apex-board at board/.
+     27 Oct 2026 (owner go, ApexGym demo kit): the look is no longer BRIQX's alone. Every gym sets FOUR things in the
+     board link, and nothing else changes: its name, its logo, its accent colour and its background colour. The type,
+     the layout and what the board shows are the same for every gym.
+
+     LIVE:  board/?gym=<gym uuid>&challenge=<challenge uuid>&name=ApexGym&accent=%23B8FF3D&bg=%230A1A3F&logo=logos/apexgym.png
+            (the week, the league length, the points ladder and the weekly challenge come from the gym's live challenge)
+            or  board/?challenge=<uuid>&start=2026-10-19&end=2026-12-13&title=Summer%20League  (no gym id on the TV;
+            no ladder line)
+     DEMO:  board/?demo=12 | 3 | 0   a sample league, a fixed clock, nothing fetched (+ the same look keys);
+            &members=1|2|3 picks one of three invented casts (1, the default, is ApexGym's seeded league)
+
+     THE LOOK KEYS (all optional, each checked, anything else ignored; plus sample=1, which says the members are invented):
+       name    the gym's name as it should read, 1 to 32 characters (default: none, the title stands alone)
+       accent  #rrggbb  the leader card, the week and the ladder (default: the type colour)
+       bg      #rrggbb  the screen's ground; the type turns black or white to suit it (default #000000)
+       logo    a PNG/JPEG in this site's logos/ folder, or one in the project's public gym-logos bucket (the logo the
+               gym's owner uploads on the coach page). Nothing from anywhere else is loaded.
+
+     WHAT IT READS: the public board (the gym-board edge function's GET ?challenge=, which returns rank, name, points
+     and classes and nothing else) every 5 minutes. Names are what members typed: they are escaped, never parsed. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, height=1080">
+<meta name="robots" content="noindex">
+<title>Gym Board</title>
+<style>
+  @font-face { font-family: 'Archivo X'; font-weight: 900; src: url('fonts/ArchivoExpanded_900Black.ttf') format('truetype'); }
+  @font-face { font-family: 'Archivo X'; font-weight: 800; src: url('fonts/ArchivoExpanded_800ExtraBold.ttf') format('truetype'); }
+  @font-face { font-family: 'Plex Mono'; font-weight: 300; src: url('fonts/IBMPlexMono_300Light.ttf') format('truetype'); }
+  @font-face { font-family: 'Plex Mono'; font-weight: 400; src: url('fonts/IBMPlexMono_400Regular.ttf') format('truetype'); }
+  /* the look: set from the link's keys by the script below; these are the no-key defaults (black and white) */
+  :root { --ink: #FFFFFF; --ground: #000000; --soft: rgba(255,255,255,0.62); --hair: rgba(255,255,255,0.9); --faint: rgba(255,255,255,0.38);
+          --accent: #FFFFFF; --on-accent: #000000; --accent-text: #FFFFFF; --grain: 0.05; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--ground); color: var(--ink); }
+  body { position: relative; font-family: 'Plex Mono', ui-monospace, monospace; font-weight: 400; }
+  .grain { position: absolute; inset: 0; background: url('grain.png'); opacity: var(--grain); pointer-events: none; }
+  .wrap { position: absolute; inset: 64px 88px 56px 88px; display: flex; flex-direction: column; }
+
+  header { display: flex; align-items: flex-end; justify-content: space-between; padding-bottom: 26px; border-bottom: 2px solid var(--hair); gap: 48px; }
+  .brand { display: flex; align-items: center; gap: 22px; margin-bottom: 12px; }
+  .brand[hidden], .brand img[hidden], .ladder[hidden] { display: none; }
+  .brand img { height: 92px; width: auto; max-width: 300px; object-fit: contain; display: block; }
+  .mark { font-family: 'Archivo X'; font-weight: 900; font-size: 44px; letter-spacing: -0.01em; line-height: 1; white-space: nowrap; }
+  h1 { font-family: 'Archivo X'; font-weight: 900; font-size: 88px; line-height: 0.95; letter-spacing: -0.01em; text-transform: uppercase; }
+  .week { text-align: right; font-size: 40px; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+  .week b { font-family: 'Archivo X'; font-weight: 900; font-size: 64px; letter-spacing: 0; display: block; line-height: 1; margin-bottom: 8px; color: var(--accent-text); }
+
+  /* the points ladder, from the gym's own challenge row (only when the board reads it) */
+  .ladder { display: flex; gap: 26px; margin-top: 20px; font-size: 25px; letter-spacing: 0.02em; text-transform: uppercase; color: var(--soft); white-space: nowrap; }
+  .ladder b { color: var(--accent-text); font-weight: 400; }
+
+  /* the top three: a band of three, the leader in the gym's accent */
+  .podium { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; margin-top: 30px; }
+  .p { border: 2px solid var(--hair); padding: 22px 30px 24px; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 26px; align-items: end; min-height: 214px; min-width: 0; }
+  .p.first { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .p .rk { font-family: 'Archivo X'; font-weight: 900; font-size: 140px; line-height: 0.82; grid-row: 1 / 3; }
+  .p .nm { font-family: 'Archivo X'; font-weight: 800; font-size: 54px; line-height: 1; text-transform: uppercase; overflow: hidden; padding-bottom: 4px; overflow-wrap: normal; }
+  .p .st { font-size: 30px; letter-spacing: 0.04em; margin-top: 10px; white-space: nowrap; line-height: 1.15; }
+  .p .st .pts { font-weight: 400; font-size: 56px; letter-spacing: 0; }
+  .p .st .cl { display: block; margin-top: 4px; }
+
+  /* fourth down: two columns, read down the left then the right */
+  .rest { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 72px; margin-top: 22px; }
+  .head, .row { display: grid; grid-template-columns: 96px minmax(0, 1fr) 150px 140px; align-items: baseline; }
+  .head { font-size: 24px; letter-spacing: 0.14em; color: var(--soft); padding-bottom: 8px; border-bottom: 1px solid var(--faint); }
+  .head span:nth-child(n+3), .row span:nth-child(n+3) { text-align: right; }
+  .row { font-size: 44px; min-height: 58px; align-items: center; border-bottom: 1px solid var(--faint); }
+  .row .r { font-weight: 300; }
+  .row .n { text-transform: uppercase; overflow-wrap: anywhere; line-height: 1.2; }
+  .row .c { font-weight: 400; color: var(--soft); }
+
+  .few { margin-top: 44px; font-size: 38px; letter-spacing: 0.04em; color: var(--soft); }
+  .few b { color: var(--ink); font-weight: 400; }
+
+  main { flex: 1; display: flex; flex-direction: column; }
+  main.few-state { justify-content: center; padding-bottom: 40px; }
+  .empty { flex: 1; display: flex; flex-direction: column; justify-content: center; padding-bottom: 40px; }
+  .empty h2 { font-family: 'Archivo X'; font-weight: 900; font-size: 96px; line-height: 1; text-transform: uppercase; }
+  .empty p { font-size: 48px; margin-top: 36px; letter-spacing: 0.02em; }
+  .empty p b { display: inline-block; border: 2px solid var(--hair); padding: 6px 18px; font-weight: 400; margin-top: 18px; }
+
+  footer { margin-top: auto; display: flex; justify-content: space-between; align-items: flex-end; font-size: 24px; letter-spacing: 0.1em; color: var(--soft); text-transform: uppercase; }
+  .powered { font-size: 24px; letter-spacing: 0.08em; color: var(--soft); text-transform: none; }
+</style>
+</head>
+<body>
+<div class="grain"></div>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="brand" id="brand" hidden><img id="logo" alt="" hidden><div class="mark" id="mark"></div></div>
+      <h1 id="title">Gym Board</h1>
+      <div class="ladder" id="ladder" hidden></div>
+    </div>
+    <div class="week" id="week"></div>
+  </header>
+  <main id="board"></main>
+  <footer>
+    <div id="note">Only members who opt in are shown &nbsp;·&nbsp; Updates every 5 min, last at <span id="at">--:--</span></div>
+    <div class="powered">Powered by Apex Coach</div>
+  </footer>
+</div>
+<script>
+(function () {
+  'use strict';
+  var PROJECT = 'https://thqeayfdqgfejmyqxmyg.supabase.co';
+  var API = PROJECT + '/functions/v1/gym-board';
+  var REST = PROJECT + '/rest/v1';
+  var LOGO_BUCKET = PROJECT + '/storage/v1/object/public/gym-logos/';
+  // the project's public anon key, the same one the app ships; it opens only what the anon role may call
+  var ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRocWVheWZkcWdmZWpteXF4bXlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwOTIwNzcsImV4cCI6MjEwMjY2ODA3N30.b-lwSsJxsJJr39aPGY7DbHxpQtzOHnEET49YN0PQ3Ic';
+  var EVERY = 5 * 60 * 1000;
+  var SHOWN = 12;
+  var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  var DAY = /^\d{4}-\d{2}-\d{2}$/;
+  var HEX = /^#[0-9a-f]{6}$/i;
+  var q = new URLSearchParams(location.search);
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+
+  /* ---------------------------------------------------------------- the gym's look: name, logo, accent, background */
+  var lum = function (hex) {
+    var c = [1, 3, 5].map(function (i) { var v = parseInt(hex.substr(i, 2), 16) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  };
+  var contrast = function (a, b) { var x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  // black or white type, whichever reads better on the colour
+  var inkOn = function (hex) { return contrast(hex, '#FFFFFF') >= contrast(hex, '#111111') ? '#FFFFFF' : '#111111'; };
+  var rgba = function (hex, a) { return 'rgba(' + [1, 3, 5].map(function (i) { return parseInt(hex.substr(i, 2), 16); }).join(',') + ',' + a + ')'; };
+  // only this site's logos/ folder or the project's public gym-logos bucket; a PNG or JPEG; never another host
+  var safeLogo = function (s) {
+    if (!s || s.length > 300) return '';
+    if (/^logos\/[a-z0-9._-]+\.(png|jpe?g)$/i.test(s) && s.indexOf('..') < 0) return s;
+    if (s.indexOf(LOGO_BUCKET) === 0 && s.indexOf('..') < 0 && /^[a-z0-9._\/-]+\.(png|jpe?g)$/i.test(s.slice(LOGO_BUCKET.length))) return s;
+    return '';
+  };
+  function applyLook() {
+    var root = document.documentElement.style;
+    var bg = HEX.test(q.get('bg') || '') ? q.get('bg') : '#000000';
+    var ink = inkOn(bg);
+    root.setProperty('--ground', bg);
+    root.setProperty('--ink', ink);
+    root.setProperty('--soft', rgba(ink, 0.64));
+    root.setProperty('--hair', rgba(ink, 0.9));
+    root.setProperty('--faint', rgba(ink, 0.3));
+    root.setProperty('--grain', ink === '#FFFFFF' ? '0.05' : '0.025');
+    var accent = HEX.test(q.get('accent') || '') ? q.get('accent') : ink;
+    root.setProperty('--accent', accent);
+    root.setProperty('--on-accent', inkOn(accent));
+    // the accent as type only where it stays readable on the ground (3:1, large text); otherwise the plain ink
+    root.setProperty('--accent-text', contrast(accent, bg) >= 3 ? accent : ink);
+    var name = (q.get('name') || '').trim().slice(0, 32);
+    var logo = safeLogo(q.get('logo') || '');
+    if (name || logo) {
+      $('brand').hidden = false;
+      $('mark').textContent = name;
+      if (logo) {
+        $('logo').onerror = function () { $('logo').hidden = true; };
+        $('logo').src = logo; $('logo').alt = name ? name + ' logo' : 'Gym logo'; $('logo').hidden = false;
+      }
+      if (name) document.title = name + ' - Gym Board';
+    }
+  }
+  applyLook();
+
+  /* ---------------------------------------------------------------- the league's weeks (src/challenge/logic.ts) */
+  var noon = function (d) { return new Date(d + 'T12:00'); };
+  var dayDiff = function (a, b) { return Math.round((noon(b) - noon(a)) / 86400000); };
+  var iso = function (x) { return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+  var mondayOf = function (d) { var x = noon(d); x.setDate(x.getDate() - (x.getDay() + 6) % 7); return iso(x); };
+  var weekOf = function (c, today) {
+    var day = today < c.start ? c.start : today > c.end ? c.end : today;
+    return { week: Math.floor(dayDiff(mondayOf(c.start), day) / 7) + 1, of: Math.floor(dayDiff(mondayOf(c.start), c.end) / 7) + 1 };
+  };
+  var MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+  var shortDay = function (d) { var x = noon(d); return x.getDate() + ' ' + MON[x.getMonth()]; };
+  // the TV's own local day and clock (never UTC: a Brisbane gym's day starts at its midnight)
+  // sample=1: a demo gym's board says plainly that its members are invented
+  var LEAD = q.get('sample') === '1' ? 'Sample league with invented members' : 'Only members who opt in are shown';
+  $('note').innerHTML = esc(LEAD) + ' &nbsp;·&nbsp; Updates every 5 min, last at <span id="at">--:--</span>';
+  var hhmm = function (x) { return String(x.getHours()).padStart(2, '0') + ':' + String(x.getMinutes()).padStart(2, '0'); };
+
+  // the ladder line, in the app's own words (src/challenge/copy.ts tierName)
+  // (open tier in plain words on a TV: "From class 11", not the app's "Class 11 on"; chair 27 Oct 2026)
+  var tierName = function (from, upTo) { return upTo === null ? (from === 1 ? 'Every class' : 'From class ' + from) : from === 1 ? 'First ' + upTo + ' classes' : 'Classes ' + from + ' to ' + upTo; };
+  function ladderOf(p) {
+    if (!p || !Array.isArray(p.tiers) || !p.tiers.length) return '';
+    var parts = [], from = 1;
+    p.tiers.forEach(function (t) {
+      if (!t || !Number.isInteger(t.points)) return;
+      parts.push(esc(tierName(from, Number.isInteger(t.upTo) ? t.upTo : null)) + ' <b>' + t.points + ' pts each</b>');
+      if (Number.isInteger(t.upTo)) from = t.upTo + 1;
+    });
+    if (Number.isInteger(p.weeklyBonus)) parts.push('Weekly challenge <b>+' + p.weeklyBonus + '</b>');
+    if (Number.isInteger(p.goal)) parts.push('Goal <b>' + p.goal + ' pts</b>');
+    return parts.map(function (s) { return '<span>' + s + '</span>'; }).join('');
+  }
+
+  function drawWeek(c, today) {
+    if (!c) { $('week').innerHTML = ''; return; }
+    var w = weekOf(c, today);
+    $('week').innerHTML = today < c.start ? '<b>STARTS</b>' + esc(shortDay(c.start))
+      : today > c.end ? '<b>FINAL</b>' + w.of + ' WEEKS'
+      : '<b>WEEK ' + w.week + '</b>OF ' + w.of;
+    if (c.title) $('title').textContent = c.title;
+    var lad = ladderOf(c.points);
+    $('ladder').innerHTML = lad;
+    $('ladder').hidden = !lad;
+  }
+
+  /* ---------------------------------------------------------------- the board */
+  function drawBoard(rows) {
+    rows = rows.slice(0, SHOWN);
+    var html = '';
+    if (!rows.length) {
+      html = '<div class="empty"><h2>The board is empty<br>for now</h2>' +
+        '<p>Opt in from the Apex Coach app:<br><b>Settings &gt; Your gym</b></p></div>';
+    } else {
+      html += '<section class="podium">' + rows.slice(0, 3).map(function (r, i) {
+        return '<div class="p' + (i === 0 ? ' first' : '') + '"><div class="rk">' + r.rank + '</div>' +
+          '<div class="nm">' + esc(r.name) + '</div>' +
+          '<div class="st"><span class="pts">' + r.points + '</span> PTS<span class="cl">' + r.classes + ' CLASSES</span></div></div>';
+      }).join('') + '</section>';
+      var rest = rows.slice(3);
+      if (rest.length) {
+        var col = function (part) {
+          return '<div><div class="head"><span>#</span><span>NAME</span><span>POINTS</span><span>CLASSES</span></div>' +
+            part.map(function (r) {
+              return '<div class="row"><span class="r">' + r.rank + '</span><span class="n">' + esc(r.name) + '</span><span>' + r.points + '</span><span class="c">' + r.classes + '</span></div>';
+            }).join('') + '</div>';
+        };
+        var half = Math.ceil(rest.length / 2);
+        html += '<section class="rest">' + col(rest.slice(0, half)) + col(rest.slice(half)) + '</section>';
+      } else {
+        html += '<p class="few">More names join as members opt in. <b>Settings &gt; Your gym</b> in the Apex Coach app.</p>';
+      }
+    }
+    var board = $('board');
+    board.innerHTML = html;
+    board.className = rows.length && rows.length <= 3 ? 'few-state' : '';
+    fitNames();
+  }
+
+  // a 16-character name never clips and never shrinks out of reach (floor 40 px). The top three break a name at its
+  // space or hyphen first, stepping down from 54 px only as far as that needs; a name with no break that still will
+  // not fit goes back to 54 px and breaks inside the word, with a hyphen at the break.
+  var faces = ['900 140px "Archivo X"', '800 54px "Archivo X"', '400 46px "Plex Mono"', '300 46px "Plex Mono"'];
+  var fontsIn = Promise.all(faces.map(function (f) { return document.fonts.load(f); })).catch(function () { return null; });
+  function fitNames() {
+    document.body.removeAttribute('data-fit');
+    fontsIn.then(function () {
+      [].forEach.call(document.querySelectorAll('.nm'), function (el) {
+        var size, fits = function () { return el.scrollHeight <= Math.ceil(size * 2.05) + 4 && el.scrollWidth <= el.clientWidth + 1; };
+        var step = function () { while (!fits() && size > 40) { size -= 2; el.style.fontSize = size + 'px'; } };
+        size = 54; el.style.overflowWrap = 'normal'; el.style.fontSize = size + 'px'; step();
+        if (!fits()) { size = 54; el.textContent = el.textContent.split('').join('­'); el.style.hyphens = 'manual'; el.style.fontSize = size + 'px'; step(); }
+      });
+      var img = $('logo');
+      var done = function () { document.body.setAttribute('data-fit', '1'); };
+      if (img.hidden || img.complete) done(); else { img.addEventListener('load', done); img.addEventListener('error', done); }
+    });
+  }
+
+  // only the four keys the contract names, whole numbers, rank order - anything else is dropped
+  function shape(raw) {
+    if (!Array.isArray(raw)) return null;
+    return raw.filter(function (r) {
+      return r && Number.isInteger(r.rank) && typeof r.name === 'string' && Number.isInteger(r.points) && Number.isInteger(r.classes);
+    }).map(function (r) { return { rank: r.rank, name: r.name, points: r.points, classes: r.classes }; })
+      .sort(function (a, b) { return a.rank - b.rank; });
+  }
+
+  /* ---------------------------------------------------------------- DEMO: the ApexGym sample league, a fixed clock */
+  if (q.has('demo')) {
+    // Spring Ladder: Mon 12 Oct to Sun 6 Dec 2026, 8 weeks; the frames' clock is Tue 27 Oct 17:30 (week 3).
+    // Points by the challenge's own rule: 6 a class for the first 10, then 3, plus 10 for each week's challenge done.
+    // Invented sample members (a first name and an initial): the same rows tools/gym-board-tv/rig/seed-sql.js writes.
+    // each cast has its own rule (a gym sets its own ladder in its challenge row); totals are computed from that rule
+    var RULES = { 1: { goal: 150, tiers: [{ upTo: 10, points: 6 }, { upTo: null, points: 3 }], weeklyBonus: 10 },
+      2: { goal: 150, tiers: [{ upTo: 10, points: 6 }, { upTo: null, points: 3 }], weeklyBonus: 10 },
+      3: { goal: 120, tiers: [{ upTo: 8, points: 6 }, { upTo: null, points: 4 }], weeklyBonus: 5 } };
+    var rule = RULES[q.get('members')] || RULES[1];
+    var C = { title: (q.get('title') || '').trim().slice(0, 40) || 'Spring Ladder', start: '2026-10-12', end: '2026-12-06', points: rule };
+    var pts = function (cl, minis) { var p = 0; for (var n = 1; n <= cl; n++) p += n <= rule.tiers[0].upTo ? rule.tiers[0].points : rule.tiers[1].points; return p + rule.weeklyBonus * minis; };
+    // three invented casts (members=1|2|3) so each sample gym shows its own people; cast 1 is ApexGym's seeded league
+    var CASTS = {
+      1: [['Mia R', 11, 3], ['Theo K', 10, 3], ['Priya S', 10, 2], ['Jack W', 9, 2], ['Grace L', 7, 3], ['Lena H', 8, 2],
+        ['Omar F', 8, 1], ['Ben T', 6, 1], ['Sofia M', 6, 0], ['Hugo D', 5, 1], ['Ava N', 4, 0], ['Kai P', 2, 0]],
+      2: [['Noah B', 12, 3], ['Zara Q', 11, 3], ['Isla J', 9, 3], ['Leo M', 10, 2], ['Finn O', 8, 2], ['Max V', 7, 2],
+        ['Ruby C', 8, 1], ['Nina S', 5, 2], ['Eli G', 6, 1], ['Owen T', 4, 1], ['Cleo A', 3, 0], ['Jai R', 1, 0]],
+      3: [['Ella W', 10, 3], ['Maya P', 9, 3], ['Chloe D', 8, 3], ['Harper L', 9, 2], ['Ivy N', 8, 2], ['Amira H', 7, 2],
+        ['Rosa K', 6, 2], ['Lucy F', 7, 1], ['Tess B', 5, 1], ['June M', 4, 1], ['Nell A', 3, 1], ['Kit S', 2, 0]],
+    };
+    var M = CASTS[q.get('members')] || CASTS[1];
+    var rows = M.map(function (m) { return { name: m[0], points: pts(m[1], m[2]), classes: m[1] }; })
+      .sort(function (a, b) { return b.points - a.points || b.classes - a.classes || (a.name < b.name ? -1 : 1); });
+    // ties share a rank (1, 1, 3), as the server's rank() does
+    rows.forEach(function (r, i) { var p = rows[i - 1]; r.rank = p && p.points === r.points && p.classes === r.classes ? p.rank : i + 1; });
+    if (q.get('qa') === 'longname') rows[1].name = 'Maximilianjohann';
+    var n = Math.max(0, Math.min(SHOWN, parseInt(q.get('demo'), 10) || 0));
+    drawWeek(C, '2026-10-27');
+    $('at').textContent = '17:30';
+    drawBoard(rows.slice(0, n));
+    return;
+  }
+
+  /* ---------------------------------------------------------------- LIVE */
+  var challengeId = q.get('challenge') || '';
+  var gymId = q.get('gym') || '';
+  var league = null;
+  if (DAY.test(q.get('start') || '') && DAY.test(q.get('end') || '')) league = { title: q.get('title') || '', start: q.get('start'), end: q.get('end') };
+  else if (q.get('title')) $('title').textContent = q.get('title');
+  var good = false;
+
+  function readChallenge() {
+    if (league || !UUID.test(gymId)) return Promise.resolve();
+    return fetch(REST + '/rpc/get_gym_challenge', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: ANON, Authorization: 'Bearer ' + ANON },
+      body: JSON.stringify({ p_gym: gymId, p_modes: ['count', 'points'] }),
+    }).then(function (r) { return r.ok ? r.json() : null; }).then(function (rows) {
+      (rows || []).map(function (r) { return r && r.get_gym_challenge ? r.get_gym_challenge : r; }).forEach(function (c) {
+        if (c && c.id === challengeId && DAY.test(c.start) && DAY.test(c.end)) league = { title: c.title || '', start: c.start, end: c.end, points: c.points || null };
+      });
+    }).catch(function () { /* the board still shows; the week waits for the next try */ });
+  }
+
+  function tick() {
+    var now = new Date();
+    readChallenge().then(function () {
+      drawWeek(league, iso(now));
+      if (!UUID.test(challengeId)) { drawBoard([]); return; }
+      return fetch(API + '?challenge=' + encodeURIComponent(challengeId), { headers: { apikey: ANON }, cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (raw) {
+          var rows = shape(raw);
+          if (!rows) throw new Error('shape');
+          good = true;
+          $('note').innerHTML = esc(LEAD) + ' &nbsp;·&nbsp; Updates every 5 min, last at <span id="at"></span>';
+          $('at').textContent = hhmm(now);
+          drawBoard(rows);
+        });
+    }).catch(function () {
+      // keep the last good board on screen; say so plainly, and try again on the next tick
+      if (!good) drawBoard([]);
+      $('note').textContent = "The board can't be reached right now. It tries again every 5 min.";
+    });
+  }
+  tick();
+  setInterval(tick, EVERY);
+  // a full reload once a day at 4 am picks up a new page version without anyone touching the TV
+  var reloadAt = new Date(); reloadAt.setHours(28, 0, 0, 0);
+  setTimeout(function () { location.reload(); }, reloadAt - new Date());
+})();
+</script>
+</body>
+</html>
